@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+Vinay Kowshik A
+
+05/03/2017
+
+##Executive Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Preliminary Setup
+
+Loading the following libraries that will be using throughout this exercise
+```{r results='hide'}
+suppressWarnings(library(kernlab))
+suppressWarnings(library(caret))
+suppressWarnings(library(randomForest))
+suppressWarnings(library(rpart))
+suppressWarnings(library(rpart.plot))
+suppressWarnings(library(rattle))
+```
+
+## Data Load & Processing
+
+The training data for this project is available here:
+
+```{r}
+trainLink <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+```
+
+The testing data for this project is available here:
+
+```{r}
+testLink <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+Downloading the files and reading them
+```{r}
+if(file.exists('Data/pml-training.csv')){
+    trainingDF <- read.csv(file = 'Data/pml-training.csv',na.strings = c("NA","#DIV/0!",""))
+}else {
+    download.file(url = trainLink,destfile = 'Data/pml-training.csv',method = 'curl')
+    trainingDF <- read.csv(file = 'Data/pml-training.csv',na.strings = c("NA","#DIV/0!",""))
+}
+if(file.exists('Data/pml-testing.csv')){
+    testingDF <- read.csv(file = 'Data/pml-testing.csv',na.strings = c("NA","#DIV/0!",""))
+}else {
+    download.file(url = testLink,destfile = 'Data/pml-testing.csv',method = 'curl')
+    testingDF <- read.csv(file = 'Data/pml-testing.csv',na.strings = c("NA","#DIV/0!",""))
+}
+```
+
+###Data Cleaning
+
+Removing the 1st seven columns from both the training data set as these will not be used in the prediction model. 
+```{r}
+trainingDF <- trainingDF[, -(1:7)]
+```
+
+Then removing all the fields that have a near zero variance.
+```{r}
+nearzero <- nearZeroVar(trainingDF, saveMetrics = TRUE)
+trainingDF <- trainingDF[, !nearzero$nzv]
+```
+
+Variables that have more than 60% missing values will be removed next.
+```{r}
+myfunc <- function(x){
+  if(sum(is.na(trainingDF[,x])) > 0.60*nrow(trainingDF)) {
+      return (TRUE)
+      } else 
+          {return (FALSE)
+              }  
+} 
+missingVal <- sapply(colnames(trainingDF),myfunc)
+trainingDF <- trainingDF[,!missingVal]
+
+#These will be the variables that are selected for model building
+names(trainingDF)
+```
+
+Prepare the testing data similar to the training set
+```{r}
+testingDF <- testingDF[,-(1:7)]
+testingDF <- testingDF[, !nearzero$nzv]
+testingDF <- testingDF[,!missingVal]
+```
+
+Splitting the training set into training and validation sets
+```{r}
+set.seed(99999)
+inTrain <- createDataPartition(y=trainingDF$classe, p = 0.75,list = FALSE)
+mytraining <- trainingDF[inTrain,]
+myvalidate <- trainingDF[-inTrain,]
+```
+
+##Prediction Model 1: Decision Tree
+```{r}
+model1 <- train(classe ~., data = mytraining,method = "rpart")
+predict1 <- predict(model1,myvalidate)
+fancyRpartPlot(model1$finalModel)
+confusionMatrix(predict1,myvalidate$classe)
+```
+
+##Prediction Model 2: Random Forest
+```{r}
+model2 <- randomForest(classe~.,data = mytraining)
+predict2 <- predict(model2,myvalidate)
+confusionMatrix(predict2,myvalidate$classe)
+```
+
+##Decision: Which prediction Model to use in this exercise
+
+Random Forest algorithm performed better than Decision Trees. Accuracy for Random Forest model was 0.9947 (95% CI: (0.9922, 0.9965)) compared to Decision Tree model with 0.4902 (95% CI: (0.4761, 0.5043)). The Random Forests model is choosen. The expected out-of-sample error is estimated at 0.0053, or 0.53%.
+
+##Final Submission
+
+Below is the final outcome based on the Random Forest (model2) model applied to the Test data set:
+
+```{r}
+predictFinal <- predict(model2,testingDF)
+predictFinal
+```
+
+Function to generate files with predictions to submit for assignment
+```{r}
+write_files <- function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+write_files(predictFinal)
+```
